@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="Directory.Build.props" />
+  </Folder>
+  <Project Path="src/Overlay/Overlay.csproj" />
+  <Project Path="src/UIProfiler/UiProfiler.csproj" />
+</Solution>

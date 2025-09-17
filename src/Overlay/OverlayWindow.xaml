@@ -1,0 +1,62 @@
+﻿<Window x:Class="UiProfiler.Overlay.OverlayWindow"
+        x:Name="Window"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:wpf="clr-namespace:LiveChartsCore.SkiaSharpView.WPF;assembly=LiveChartsCore.SkiaSharpView.WPF"
+        mc:Ignorable="d"
+        Title="Overlay" Height="450" Width="800"
+        Background="Transparent"
+        AllowsTransparency="True"
+        WindowStyle="None">
+    <Window.Resources>
+        <Storyboard x:Key="ShowStoryboard" Storyboard.Target="{Binding ElementName=Background}">
+            <DoubleAnimation Duration="0:0:0.150" From="0" To="1" Storyboard.TargetProperty="Opacity">
+                <DoubleAnimation.EasingFunction>
+                    <ExponentialEase EasingMode="EaseIn"/>
+                </DoubleAnimation.EasingFunction>
+            </DoubleAnimation>
+        </Storyboard>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition />
+            <RowDefinition Height="250"/>
+            <RowDefinition Height="auto" />
+        </Grid.RowDefinitions>
+
+        <Rectangle x:Name="Background" Grid.RowSpan="3" Opacity="0">
+            <Rectangle.Fill>
+                <SolidColorBrush Color="#80FF0000"></SolidColorBrush>
+            </Rectangle.Fill>
+        </Rectangle>
+       
+        <wpf:CartesianChart 
+            x:Name="Chart"
+            Grid.Row="1"
+            Height="200"
+            VerticalAlignment="Bottom"
+            Series="{Binding Path=Series}"
+            Sections="{Binding Path=Sections}"
+            XAxes="{Binding Path=X}"
+            YAxes="{Binding Path=Y}">
+            <wpf:CartesianChart.Background>
+                <SolidColorBrush Color="#1E1E1E" Opacity=".7" />
+            </wpf:CartesianChart.Background>
+        </wpf:CartesianChart>
+
+        <DockPanel Grid.Row="2" VerticalAlignment="Bottom" HorizontalAlignment="Stretch">
+            <DockPanel.Background>
+                <SolidColorBrush Color="#1E1E1E" Opacity=".7" />
+            </DockPanel.Background>
+            <TextBlock x:Name="TextCaption" Foreground="Salmon" TextBlock.FontSize="32" FontWeight="Bold" Margin="10 0 0 0" DockPanel.Dock="Left" />
+            <StackPanel Orientation="Horizontal" TextBlock.Foreground="Cyan" TextBlock.FontSize="32" DockPanel.Dock="Right" HorizontalAlignment="Right" Margin="0 0 10 0">
+                <TextBlock x:Name="TextThreshold" Margin="10 0 0 0" />
+                <TextBlock x:Name="TextTotalTime" Margin="0" FontWeight="Bold"/>
+                <TextBlock Text=" ms" Margin="0"/>
+            </StackPanel>
+        </DockPanel>
+    </Grid>
+</Window>

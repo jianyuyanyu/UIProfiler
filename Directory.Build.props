@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <UseArtifactsOutput>true</UseArtifactsOutput>
+    <IncludeProjectNameInArtifactsPaths>false</IncludeProjectNameInArtifactsPaths>
+    <UseArtifactsIntermediateOutput>false</UseArtifactsIntermediateOutput>
+  </PropertyGroup>
+</Project>
