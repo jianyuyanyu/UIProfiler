@@ -4,7 +4,7 @@ using Silhouette;
 
 namespace UiProfiler;
 
-internal class DllMain
+internal static class DllMain
 {
     [UnmanagedCallersOnly(EntryPoint = "DllGetClassObject")]
     public static unsafe HResult DllGetClassObject(Guid* rclsid, Guid* riid, nint* ppv)

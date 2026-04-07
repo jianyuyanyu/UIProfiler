@@ -125,6 +125,8 @@ internal static unsafe partial class NativeMethods
     {
         WH_CALLWNDPROC = 4,
         WH_GETMESSAGE = 3,
+        WH_KEYBOARD = 2,
+        WH_KEYBOARD_LL = 13,
         WH_MOUSE = 7,
     }
 
@@ -146,11 +148,18 @@ internal static unsafe partial class NativeMethods
         public IntPtr ExtraInfo;
     }
 
+    [StructLayout(LayoutKind.Explicit)]
+    internal struct INPUTUNION
+    {
+        [FieldOffset(0)] public MOUSEINPUT mi;
+        [FieldOffset(0)] public KEYBDINPUT ki;
+    }
+
     [StructLayout(LayoutKind.Sequential)]
     internal struct INPUT
     {
         public uint type;
-        public MOUSEINPUT mi;
+        public INPUTUNION u;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -162,6 +171,39 @@ internal static unsafe partial class NativeMethods
         public uint dwFlags;
         public uint time;
         public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [DllImport("user32.dll")]
+    internal static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    internal static extern int GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+
+    [DllImport("user32.dll")]
+    internal static extern bool TranslateMessage(ref MSG lpMsg);
+
+    [DllImport("user32.dll")]
+    internal static extern IntPtr DispatchMessage(ref MSG lpMsg);
+
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct MSG
+    {
+        public IntPtr hwnd;
+        public uint message;
+        public IntPtr wParam;
+        public IntPtr lParam;
+        public uint time;
+        public POINT pt;
     }
 
     [DllImport("user32.dll", SetLastError = true)]

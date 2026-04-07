@@ -12,9 +12,11 @@ internal class CorProfilerCallback : CorProfilerCallback4Base
 
     private readonly BlockingCollection<string> _messages = new();
     private readonly ManualResetEventSlim _responsiveMutex = new(false);
+    private readonly ConcurrentQueue<long> _keyTimestamps = new();
 
     private uint _mainThreadId;
     private long _pausesCount;
+    private long _suspendUntilTicks;
 
     protected override HResult Initialize(int iCorProfilerInfoVersion)
     {
@@ -37,6 +39,12 @@ internal class CorProfilerCallback : CorProfilerCallback4Base
             Name = "UI Profiler Thread"
         }.Start();
 
+        new Thread(LowLevelHookThread)
+        {
+            IsBackground = true,
+            Name = "UI Profiler LL Hook"
+        }.Start();
+
         new Thread(InputThread)
         {
             IsBackground = true,
@@ -52,15 +60,56 @@ internal class CorProfilerCallback : CorProfilerCallback4Base
         return HResult.S_OK;
     }
 
+    private void LowLevelHookThread()
+    {
+        var hook = NativeMethods.SetWindowsHookEx(NativeMethods.HookType.WH_KEYBOARD_LL, LowLevelHookProc, 0, 0);
+
+        if (hook == IntPtr.Zero)
+        {
+            Logger.Log($"Failed to install WH_KEYBOARD_LL hook: {Marshal.GetLastWin32Error()}");
+            return;
+        }
+
+        // Message pump to keep the LL hook alive
+        while (NativeMethods.GetMessage(out var msg, IntPtr.Zero, 0, 0) > 0)
+        {
+            NativeMethods.TranslateMessage(ref msg);
+            NativeMethods.DispatchMessage(ref msg);
+        }
+
+        return;
+
+        IntPtr LowLevelHookProc(int code, IntPtr wParam, IntPtr lParam)
+        {
+            if (code >= 0)
+            {
+                _keyTimestamps.Enqueue(Stopwatch.GetTimestamp());
+            }
+
+            return NativeMethods.CallNextHookEx(0, code, wParam, lParam);
+        }
+    }
+
     private void SetHook(int threadId)
     {
-        NativeMethods.SetWindowsHookEx(NativeMethods.HookType.WH_MOUSE, HookProc, 0, threadId);
+        NativeMethods.SetWindowsHookEx(NativeMethods.HookType.WH_KEYBOARD, HookProc, 0, threadId);
 
         IntPtr HookProc(int code, IntPtr wParam, IntPtr lParam)
         {
             if (code >= 0)
             {
-                _responsiveMutex.Set();
+                var isProbeKey = (int)wParam == 0xFC;
+
+                if (!isProbeKey)
+                {                    
+                    Interlocked.Exchange(ref _suspendUntilTicks, Environment.TickCount64 + 3000);
+                }
+
+                // Dequeue the LL timestamp and signal responsiveness
+                if (_keyTimestamps.TryDequeue(out _))
+                {
+                    _responsiveMutex.Set();
+                }
             }
 
             return NativeMethods.CallNextHookEx(0, code, wParam, lParam);
@@ -96,7 +145,8 @@ internal class CorProfilerCallback : CorProfilerCallback4Base
             {
                 if (isResponsive)
                 {
-                    if (!IsCursorOverProcessWindow())
+                    // No pending keys = idle, not frozen
+                    if (_keyTimestamps.IsEmpty)
                     {
                         continue;
                     }
@@ -119,36 +169,38 @@ internal class CorProfilerCallback : CorProfilerCallback4Base
     {
         SetHook((int)_mainThreadId);
 
-        int mouseDelta = 2;
-
         try
         {
-            var inputs = new NativeMethods.INPUT[1];
+            var inputs = new NativeMethods.INPUT[2];
+            var inputSize = Marshal.SizeOf<NativeMethods.INPUT>();
 
             while (true)
             {
                 Thread.Sleep(10);
 
+                if (Environment.TickCount64 < Interlocked.Read(ref _suspendUntilTicks))
+                {
+                    continue;
+                }
+
+                WaitForMainWindow();
+
+                const ushort key = 0xFC; // VK_NONAME
+                const uint type = 0x1; // INPUT_KEYBOARD
+
                 inputs[0] = new()
                 {
-                    mi = new()
-                    {
-                        dx = mouseDelta,
-                        dy = 0,
-                        dwFlags = 0x1 /* MOUSEEVENTF_MOVE */
-                    },
-                    type = 0x0 /* INPUT_MOUSE */
+                    u = new() { ki = new() { wVk = key } },
+                    type = type
                 };
 
-                mouseDelta = -mouseDelta;
-
-                var res = NativeMethods.SendInput(1, inputs, Marshal.SizeOf<NativeMethods.INPUT>());
-
-                if (res != 1)
+                inputs[1] = new()
                 {
-                    var error = Marshal.GetLastWin32Error();
-                    Logger.Log($"SendInput returned {res} - {error:x2}");
-                }
+                    u = new() { ki = new() { wVk = key, dwFlags = 0x2 /* KEYEVENTF_KEYUP */ } },
+                    type = type
+                };
+
+                _ = NativeMethods.SendInput(2, inputs, inputSize);
             }
         }
         catch (Exception ex)
@@ -188,41 +240,23 @@ internal class CorProfilerCallback : CorProfilerCallback4Base
         }
     }
 
-    private static bool IsCursorOverProcessWindow()
+    private static void WaitForMainWindow()
     {
-        if (!NativeMethods.GetCursorPos(out var cursorPosition))
+        while (true)
         {
-            return false;
-        }
+            var foreground = NativeMethods.GetForegroundWindow();
 
-        var isOverWindow = false;
-
-        NativeMethods.EnumWindows(
-            (hWnd, _) =>
+            if (foreground != IntPtr.Zero)
             {
-                NativeMethods.GetWindowThreadProcessId(hWnd, out var pid);
+                NativeMethods.GetWindowThreadProcessId(foreground, out var pid);
 
-                if (pid != Environment.ProcessId || !NativeMethods.IsWindowVisible(hWnd))
+                if (pid == Environment.ProcessId)
                 {
-                    return true;
+                    return;
                 }
+            }
 
-                if (!NativeMethods.GetWindowRect(hWnd, out var rect))
-                {
-                    return true;
-                }
-
-                if (cursorPosition.X < rect.Left || cursorPosition.X >= rect.Right ||
-                    cursorPosition.Y < rect.Top || cursorPosition.Y >= rect.Bottom)
-                {
-                    return true;
-                }
-
-                isOverWindow = true;
-                return false;
-            },
-            IntPtr.Zero);
-
-        return isOverWindow;
+            Thread.Sleep(100);
+        }
     }
 }
